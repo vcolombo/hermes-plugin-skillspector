@@ -39,7 +39,7 @@ uv pip install --python /opt/hermes/.venv/bin/python \
 **2. Install the plugin** (run as the user Hermes runs as — *not* root):
 
 ```bash
-hermes plugins install <owner>/hermes-plugin-skillspector/skillspector_hermes --enable
+hermes plugins install vcolombo/hermes-plugin-skillspector/skillspector_hermes --enable
 ```
 
 (The plugin package lives in the `skillspector_hermes/` subdirectory so only
