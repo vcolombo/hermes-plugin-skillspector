@@ -1,0 +1,16 @@
+[project]
+name = "hermes-plugin-skillspector"
+version = "1.0.0"
+description = "Hermes Agent plugin: scan AI skills with SkillSpector on the host's own model"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
