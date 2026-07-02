@@ -1,9 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "hermes-plugin-skillspector"
 version = "1.0.0"
 description = "Hermes Agent plugin: scan AI skills with SkillSpector on the host's own model"
 requires-python = ">=3.12"
 license = "Apache-2.0"
+
+# Pip-based discovery (the docs-recommended public distribution path):
+# `pip install git+https://github.com/vcolombo/hermes-plugin-skillspector`
+# and Hermes finds the plugin via this entry point — no plugins-dir copy.
+[project.entry-points."hermes_agent.plugins"]
+skillspector_hermes = "skillspector_hermes"
+
+[tool.setuptools]
+packages = ["skillspector_hermes", "skillspector_hermes.host_llm"]
+
+[tool.setuptools.package-data]
+skillspector_hermes = ["plugin.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

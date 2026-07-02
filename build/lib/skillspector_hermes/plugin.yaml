@@ -1,0 +1,21 @@
+# Named skillspector_hermes (not skillspector) so the plugin package can never
+# shadow the installed `skillspector` distribution it imports at scan time.
+name: skillspector_hermes
+version: 1.0.0
+description: >-
+  Security scanner for AI agent skills, powered by SkillSpector. Scan a skill,
+  MCP server, Git repo, URL, zip, or local directory for vulnerabilities and
+  malicious patterns before installing or trusting it, and gate installs on the
+  returned risk verdict. The optional LLM semantic pass runs on the host's own
+  model via ctx.llm — no plugin-managed API keys. Requires the skillspector
+  Python package installed from Git in the Hermes environment (see README).
+author: Vincent Colombo
+provides_tools:
+  - skillspector_scan
+optional_env:
+  - name: SKILLSPECTOR_MODEL
+    description: >-
+      Optional model override for the host LLM pass. Leave unset to use whatever
+      model the Hermes agent is currently configured with. Forwarding the
+      override to the host requires allow_model_override in this plugin's
+      config.yaml llm block; without it the scan degrades to the host default.

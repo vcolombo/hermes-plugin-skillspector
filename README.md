@@ -45,6 +45,14 @@ hermes plugins install vcolombo/hermes-plugin-skillspector/skillspector_hermes -
 (The plugin package lives in the `skillspector_hermes/` subdirectory so only
 the runtime files are copied into `~/.hermes/plugins`.)
 
+Alternatively, install via pip — Hermes discovers the plugin through its
+`hermes_agent.plugins` entry point, no plugins-directory copy needed:
+
+```bash
+uv pip install --python /opt/hermes/.venv/bin/python \
+    git+https://github.com/vcolombo/hermes-plugin-skillspector.git
+```
+
 ## Use
 
 Ask the agent to scan anything before installing it:
