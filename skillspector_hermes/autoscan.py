@@ -336,6 +336,30 @@ def evaluate(
     return _approve(_summary(verdict, target.ref), key)
 
 
+def scan_reason(ctx: object, cfg: Config, source: str, *, host_llm_available: bool) -> str | None:
+    """Scan *source* and map the verdict to a block reason (or ``None`` = allow).
+
+    Used by the post-parse install gate, where a non-None return blocks the
+    install. Fail-closed: an errored/incomplete scan blocks. A clean static-only
+    verdict is allowed when no host LLM was available (a bare CLI install has no
+    bound model — blocking every such install would be unusable), but a semantic
+    pass that was expected yet did not run (`host_llm_available` and
+    ``llm_used`` not True) blocks, so an LLM outage cannot silently downgrade a
+    gate the operator configured.
+    """
+    verdict = _scan(ctx, cfg, source)
+    if not isinstance(verdict, dict) or "error" in verdict:
+        return f"SkillSpector scan did not complete for {source!r}"
+    if verdict.get("safe_to_install") is not True:
+        return _summary(verdict, source)
+    if host_llm_available and verdict.get("llm_used") is not True:
+        return (
+            f"requested semantic scan of {source!r} did not run "
+            f"(llm_used={verdict.get('llm_used')!r}, scan_mode={verdict.get('scan_mode')!r})"
+        )
+    return None
+
+
 def _scan_worker(conn: Any, args: dict[str, Any], host_llm: object) -> None:
     """Child entry point: run the scan and pipe back the JSON report string."""
     try:
