@@ -90,9 +90,21 @@ plugins:
 - **Authoritative (patched/upstream Hermes):** when the host exposes the
   `pre_plugin_install` / `pre_mcp_add` lifecycle hooks, the gate scans the
   *canonical, already-parsed* install — the cloned plugin files on disk, or the
-  resolved MCP `server_config` — before the artifact is trusted. No shell
-  parsing, no TOCTOU, and it covers CLI, dashboard, and agent installs. A
-  non-clean scan blocks the install with a printed reason.
+  resolved MCP `server_config` — before the artifact is trusted, and covers CLI,
+  dashboard, and agent installs. A non-clean scan blocks with a printed reason.
+  TOCTOU scope differs by kind:
+  - **Plugin install is TOCTOU-free** — Hermes hands the gate the *already
+    cloned* files on disk and only promotes those exact bytes into
+    `~/.hermes/plugins` after a clean verdict.
+  - **MCP add is best-effort, not TOCTOU-free** — the gate scans the artifact
+    *reference* (`--command`/`--args` path, or URL) at install time, but Hermes
+    stores that reference and launches it later. A local file can be swapped or a
+    symlink retargeted after approval, and a remote/refetched URL can change, so
+    the launched bytes may differ from the scanned ones. Closing this needs
+    *core* launch-time binding (quarantine-copy the approved artifact and launch
+    from it, or persist a digest and revalidate before every launch; pin remote
+    artifacts to an immutable digest/commit). Until then, treat the MCP verdict
+    as install-time assurance only.
 - **Fallback (stock Hermes):** without those hooks, the plugin watches the
   agent's `terminal` tool and parses `hermes plugins install` / `hermes mcp add`
   commands heuristically. This is best-effort — it only sees agent-run installs

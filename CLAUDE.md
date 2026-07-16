@@ -47,8 +47,13 @@ and is fine.
 **3. The install gate has two tiers, feature-detected via `VALID_HOOKS`** — mirrors
   `bridge.py`'s native-vs-bridge pattern. When the host exposes
   `pre_plugin_install` / `pre_mcp_add` lifecycle hooks, the plugin uses the
-  authoritative post-parse gate (`install_gate.py`) for canonical, TOCTOU-free
-  scanning. On stock Hermes lacking those hooks, it falls back to the
+  authoritative post-parse gate (`install_gate.py`) that scans canonical,
+  already-parsed args. TOCTOU-free only for **plugin** installs (Hermes hands the
+  gate the cloned bytes and promotes those exact bytes); **MCP** add scans the
+  artifact *reference* that Hermes launches later, so it is install-time
+  best-effort, not TOCTOU-free (a swapped file / refetched URL can change the
+  launched bytes — airtight MCP needs core launch-time binding). On stock Hermes
+  lacking those hooks, it falls back to the
   terminal-command parser (`autoscan.py`), which is best-effort and intentionally
   frozen — do not extend it. Hermes registers exactly one of the two: the
   authoritative hooks when both are supported, otherwise only the fallback watcher

@@ -7,9 +7,23 @@ Registered when the running Hermes exposes the ``pre_plugin_install`` /
 ``pre_mcp_add`` lifecycle hooks (feature-detected in ``__init__.register``).
 Unlike the legacy ``autoscan`` terminal parser, these callbacks receive
 canonical, already-parsed install args — the cloned plugin files on disk and
-the fully-resolved MCP ``server_config`` — so there is no shell-command guessing
-and no TOCTOU. A callback returns a ``list[str]`` of block reasons to REJECT the
-install, or ``None`` to allow (the Hermes-core contract).
+the fully-resolved MCP ``server_config`` — so there is no shell-command guessing.
+A callback returns a ``list[str]`` of block reasons to REJECT the install, or
+``None`` to allow (the Hermes-core contract).
+
+TOCTOU scope differs by kind:
+
+* **Plugin install is TOCTOU-free** — ``pre_plugin_install`` hands us the cloned
+  files on disk and Hermes promotes *those exact bytes* only after a clean
+  verdict.
+* **MCP add is install-time best-effort, NOT TOCTOU-free** — we scan the artifact
+  *reference* (a ``--command``/``--args`` path, or a URL) but Hermes stores that
+  reference and launches it later; a swapped file, retargeted symlink, or
+  refetched URL can change the launched bytes. Closing this needs core
+  launch-time binding (quarantine-copy + launch-from, or digest-pin + revalidate
+  before each launch; reject mutable remote URLs). We still fail closed on
+  everything we *can* see (loader options, ambiguous/relative artifacts, env
+  injection), but a mutable absolute reference is only vetted at install time.
 """
 
 from __future__ import annotations
