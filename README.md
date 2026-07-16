@@ -96,15 +96,24 @@ plugins:
   - **Plugin install is TOCTOU-free** — Hermes hands the gate the *already
     cloned* files on disk and only promotes those exact bytes into
     `~/.hermes/plugins` after a clean verdict.
-  - **MCP add is best-effort, not TOCTOU-free** — the gate scans the artifact
-    *reference* (`--command`/`--args` path, or URL) at install time, but Hermes
-    stores that reference and launches it later. A local file can be swapped or a
-    symlink retargeted after approval, and a remote/refetched URL can change, so
-    the launched bytes may differ from the scanned ones. Closing this needs
-    *core* launch-time binding (quarantine-copy the approved artifact and launch
-    from it, or persist a digest and revalidate before every launch; pin remote
-    artifacts to an immutable digest/commit). Until then, treat the MCP verdict
-    as install-time assurance only.
+  - **MCP add is best-effort, not airtight** — two inherent gaps of vetting a
+    *config* instead of sandboxing execution:
+    - *Mutable reference (TOCTOU):* the gate scans the artifact reference
+      (`--command`/`--args` path, or URL); Hermes stores it and launches it
+      later, so a swapped file, retargeted symlink, or refetched URL can change
+      the launched bytes.
+    - *Un-modeled runner argv:* it fails closed on the option shapes it
+      *recognizes* (`--require`/`--import`/`--loader`/`-c`/`-e`/`-r` and attached
+      forms, `--env`, and ambiguous/relative/multi artifacts), but does not fully
+      model every interpreter's argv — an unrecognized loader/config option (e.g.
+      node `--env-file=` carrying `NODE_OPTIONS`, deno `--config`, php
+      `-d auto_prepend_file=`) could introduce code the single-artifact scan
+      never sees. A clean MCP verdict covers the *recognized* payload only.
+
+    Airtight MCP vetting must happen at the execution boundary (Hermes core:
+    quarantine-copy + launch-from, or digest-pin + revalidate before each
+    launch). Until then, treat the MCP verdict as install-time, best-effort
+    assurance over the common cases.
 - **Fallback (stock Hermes):** without those hooks, the plugin watches the
   agent's `terminal` tool and parses `hermes plugins install` / `hermes mcp add`
   commands heuristically. This is best-effort — it only sees agent-run installs

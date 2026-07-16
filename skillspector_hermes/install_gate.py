@@ -16,14 +16,24 @@ TOCTOU scope differs by kind:
 * **Plugin install is TOCTOU-free** — ``pre_plugin_install`` hands us the cloned
   files on disk and Hermes promotes *those exact bytes* only after a clean
   verdict.
-* **MCP add is install-time best-effort, NOT TOCTOU-free** — we scan the artifact
-  *reference* (a ``--command``/``--args`` path, or a URL) but Hermes stores that
-  reference and launches it later; a swapped file, retargeted symlink, or
-  refetched URL can change the launched bytes. Closing this needs core
-  launch-time binding (quarantine-copy + launch-from, or digest-pin + revalidate
-  before each launch; reject mutable remote URLs). We still fail closed on
-  everything we *can* see (loader options, ambiguous/relative artifacts, env
-  injection), but a mutable absolute reference is only vetted at install time.
+* **MCP add is install-time best-effort, NOT airtight.** Two gaps are inherent
+  to scanning a *config* rather than sandboxing execution:
+  - *Mutable reference (TOCTOU).* We scan the artifact reference (a
+    ``--command``/``--args`` path, or URL); Hermes stores it and launches it
+    later, so a swapped file, retargeted symlink, or refetched URL can change the
+    launched bytes. Closing this needs core launch-time binding (quarantine-copy
+    + launch-from, or digest-pin + revalidate before each launch; reject mutable
+    remote URLs).
+  - *Un-modeled runner argv.* We fail closed on the option shapes we *recognize*
+    (``--require``/``--import``/``--loader``/``-c``/``-e``/``-r`` and attached
+    forms, ``--env``, ambiguous/relative/multi artifacts), but we do NOT fully
+    model every interpreter's argv. An unrecognized loader/config option — e.g.
+    node ``--env-file=…`` (which can carry ``NODE_OPTIONS=--require=…``), deno
+    ``--config``, php ``-d auto_prepend_file=…`` — could introduce code the
+    single-artifact scan never sees. A clean MCP verdict therefore covers the
+    *recognized* payload only; it is not a proof that nothing else runs.
+  For airtight MCP vetting, gate at the execution boundary (Hermes core), not at
+  config time. This gate is defense-in-depth over the common cases.
 """
 
 from __future__ import annotations

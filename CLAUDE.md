@@ -49,10 +49,15 @@ and is fine.
   `pre_plugin_install` / `pre_mcp_add` lifecycle hooks, the plugin uses the
   authoritative post-parse gate (`install_gate.py`) that scans canonical,
   already-parsed args. TOCTOU-free only for **plugin** installs (Hermes hands the
-  gate the cloned bytes and promotes those exact bytes); **MCP** add scans the
-  artifact *reference* that Hermes launches later, so it is install-time
-  best-effort, not TOCTOU-free (a swapped file / refetched URL can change the
-  launched bytes — airtight MCP needs core launch-time binding). On stock Hermes
+  gate the cloned bytes and promotes those exact bytes); **MCP** add is
+  install-time best-effort, not airtight — it scans the artifact *reference*
+  Hermes launches later (mutable file/symlink/refetched URL = TOCTOU), and it
+  fails closed on *recognized* runner-argv shapes (loader/env/eval options,
+  ambiguous/relative/multi artifacts) but does not fully model every
+  interpreter's argv (an unrecognized loader/config option like node
+  `--env-file` could introduce unscanned code). Airtight MCP needs core
+  launch-time binding — do NOT keep chasing individual argv flags here (that is
+  the whack-a-mole this design deliberately bounds). On stock Hermes
   lacking those hooks, it falls back to the
   terminal-command parser (`autoscan.py`), which is best-effort and intentionally
   frozen — do not extend it. Hermes registers exactly one of the two: the
