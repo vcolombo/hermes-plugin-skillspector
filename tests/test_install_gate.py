@@ -122,3 +122,45 @@ def test_mcp_hook_policy(plugin, monkeypatch, server_config, should_block, shoul
     out = hook(name="x", server_config=server_config)
     assert (out is not None) == should_block
     assert scanned["called"] == should_scan
+
+
+# -- register wiring: feature-detect which hook set to install ------------------
+
+
+class _Ctx:
+    llm = None
+
+    def __init__(self):
+        self.hooks = []
+
+    def register_tool(self, **kwargs):
+        pass
+
+    def register_hook(self, name, cb):
+        self.hooks.append(name)
+
+
+def _plugin_mod():
+    return importlib.import_module(PKG)
+
+
+def test_register_uses_post_parse_hooks_when_supported(plugin, monkeypatch):
+    a = _autoscan()
+    monkeypatch.setattr(a, "load_config", lambda ctx: a.Config(True, True, 5))
+    monkeypatch.setattr(
+        _plugin_mod(),
+        "_supported_hooks",
+        lambda: {"pre_plugin_install", "pre_mcp_add", "pre_tool_call"},
+    )
+    ctx = _Ctx()
+    _plugin_mod().register(ctx)
+    assert set(ctx.hooks) == {"pre_plugin_install", "pre_mcp_add"}
+
+
+def test_register_falls_back_to_terminal_hook_on_stock(plugin, monkeypatch):
+    a = _autoscan()
+    monkeypatch.setattr(a, "load_config", lambda ctx: a.Config(True, True, 5))
+    monkeypatch.setattr(_plugin_mod(), "_supported_hooks", lambda: {"pre_tool_call"})
+    ctx = _Ctx()
+    _plugin_mod().register(ctx)
+    assert ctx.hooks == ["pre_tool_call"]

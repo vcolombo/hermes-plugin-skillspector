@@ -581,6 +581,7 @@ class _Ctx:
 def test_register_installs_hook_when_enabled(plugin, monkeypatch):
     a = _autoscan()
     monkeypatch.setattr(a, "load_config", lambda ctx: a.Config(True, True, 5))
+    monkeypatch.setattr(plugin, "_supported_hooks", lambda: {"pre_tool_call"})
     ctx = _Ctx()
     plugin.register(ctx)
     assert ctx.hooks == ["pre_tool_call"]

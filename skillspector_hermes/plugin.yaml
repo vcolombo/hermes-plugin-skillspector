@@ -16,6 +16,8 @@ author: Vincent Colombo
 provides_tools:
   - skillspector_scan
 provides_hooks:
+  - pre_plugin_install
+  - pre_mcp_add
   - pre_tool_call
 optional_config:
   - key: auto_scan
