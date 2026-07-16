@@ -50,9 +50,11 @@ and is fine.
   authoritative post-parse gate (`install_gate.py`) for canonical, TOCTOU-free
   scanning. On stock Hermes lacking those hooks, it falls back to the
   terminal-command parser (`autoscan.py`), which is best-effort and intentionally
-  frozen — do not extend it. The fallback watcher (`autoscan.make_hook`) is always
-  registered; it delegates to the authoritative gate if available, else parses
-  the shell string heuristically.
+  frozen — do not extend it. Hermes registers exactly one of the two: the
+  authoritative hooks when both are supported, otherwise only the fallback watcher
+  (`autoscan.make_hook`). The fallback parser does not delegate to `install_gate`
+  — the two paths are mutually exclusive, chosen once at `register()` time by
+  feature detection.
 
 The host LLM is held in a `ContextVar` (`host_llm/_state.py`) — task-local, async-safe. It
 is an opaque `object`; this package never imports the Hermes `agent` package and calls the
