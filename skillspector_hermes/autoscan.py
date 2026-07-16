@@ -60,9 +60,13 @@ _SHELL_WRAPPERS = {"sh", "bash", "zsh", "dash", "env", "eval", "xargs", "nohup",
 _MCP_RUNNERS = {"npx", "uvx", "pipx", "node", "python", "python3", "deno", "bun", "sh", "bash"}
 
 # Runner options that load/execute extra code the payload scan would miss
-# (`--require=/x`, `-r x`, `--import x`, `--loader …`, `-e '<code>'`). The
-# non-flag payload filter drops these, so a config pairing a clean artifact with
-# one of them scans only the clean file while the runner runs the injected one.
+# (`--require=/x`, `-r x`, `--import x`, `--loader …`, `-e '<code>'`), plus the
+# interpreter command-string flag `-c` (``bash -c '<code>'``, ``python -c
+# '<code>'``) whose value is code, not a scannable file. The non-flag payload
+# filter would treat that code string as a path, so a config pairing a clean
+# decoy with injected commands could scan only the decoy while the runner
+# executes both. Fail closed when any is present. (NB: not the Hermes `--command`
+# transport flag — that names the runner and is handled separately.)
 _LOADER_OPTS = frozenset(
     {
         "--require",
@@ -73,6 +77,7 @@ _LOADER_OPTS = frozenset(
         "--preload",
         "--eval",
         "-e",
+        "-c",
     }
 )
 # An option value ending in one of these (or a data: URI) is executable code.
@@ -382,30 +387,34 @@ def evaluate(
     return _approve(_summary(verdict, target.ref), key)
 
 
-def scan_reason(ctx: object, cfg: Config, source: str) -> str | None:
+def scan_reason(ctx: object, cfg: Config, source: str, *, host_llm_available: bool) -> str | None:
     """Scan *source* and map the verdict to a block reason (or ``None`` = allow).
 
-    Used by the post-parse install gate, where a non-None return blocks the
-    install. Fail-closed and a clean two-state policy:
+    Used by the post-parse install gate, where a non-None return HARD-BLOCKS the
+    install (these hooks have no manual-approval path). Policy:
 
-    * ``use_llm: false`` — a static scan; a clean static verdict allows.
-    * ``use_llm: true`` — the operator asked for the semantic pass, so a clean
-      verdict is only allowed with positive confirmation it ran (``llm_used`` is
-      True). Anything else — an outage, or no host LLM bound in this context —
-      blocks (escalates to approval) rather than silently downgrading to static.
-
-    An errored/incomplete/timed-out scan always blocks.
+    * A finding (``safe_to_install`` not True) or an errored/incomplete/timed-out
+      scan always blocks.
+    * ``use_llm: false`` — static scan; a clean static verdict allows.
+    * ``use_llm: true`` with a host LLM **bound in this context** — the semantic
+      pass was requested and could run, so a clean verdict is only allowed with
+      positive confirmation it ran (``llm_used`` is True); an outage/error that
+      silently downgrades to static blocks instead.
+    * ``use_llm: true`` with **no host LLM bound** — the common bare CLI/dashboard
+      install has no model to call, so a clean static verdict allows rather than
+      hard-rejecting every such install. (Semantic scanning only happens where a
+      model is actually available, e.g. an agent-driven install.)
     """
     verdict = _scan(ctx, cfg, source)
     if not isinstance(verdict, dict) or "error" in verdict:
-        return f"SkillSpector scan did not complete for {source!r}"
+        return f"SkillSpector scan did not complete for {source!r}; install blocked"
     if verdict.get("safe_to_install") is not True:
         return _summary(verdict, source)
-    if cfg.use_llm and verdict.get("llm_used") is not True:
+    if cfg.use_llm and host_llm_available and verdict.get("llm_used") is not True:
         return (
-            f"requested semantic scan of {source!r} did not run "
-            f"(use_llm=true, llm_used={verdict.get('llm_used')!r}, "
-            f"scan_mode={verdict.get('scan_mode')!r}); approve manually"
+            f"requested semantic scan of {source!r} did not run despite a bound model "
+            f"(llm_used={verdict.get('llm_used')!r}, scan_mode={verdict.get('scan_mode')!r}); "
+            "install blocked"
         )
     return None
 

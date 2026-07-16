@@ -40,6 +40,10 @@ logger = logging.getLogger("skillspector_hermes.install_gate")
 _MCP_RUNNERS = autoscan._MCP_RUNNERS
 
 
+def _host_llm_available(ctx: object) -> bool:
+    return getattr(ctx, "llm", None) is not None
+
+
 def make_plugin_install_hook(ctx: object, cfg: autoscan.Config) -> Callable[..., list[str] | None]:
     """Build the ``pre_plugin_install`` callback."""
 
@@ -58,7 +62,9 @@ def make_plugin_install_hook(ctx: object, cfg: autoscan.Config) -> Callable[...,
             source = path or git_url
             if not source:
                 return [f"plugin {name!r}: no scannable source provided by installer"]
-            reason = autoscan.scan_reason(ctx, cfg, source)
+            reason = autoscan.scan_reason(
+                ctx, cfg, source, host_llm_available=_host_llm_available(ctx)
+            )
             return [reason] if reason else None
         except Exception:  # noqa: BLE001 — fail closed; never break the install path
             logger.exception("skillspector plugin-install gate errored; blocking")
@@ -119,7 +125,9 @@ def make_mcp_add_hook(ctx: object, cfg: autoscan.Config) -> Callable[..., list[s
             source, reason = _mcp_payload(server_config)
             if reason:
                 return [f"MCP server {name!r}: {reason}"]
-            result = autoscan.scan_reason(ctx, cfg, source)
+            result = autoscan.scan_reason(
+                ctx, cfg, source, host_llm_available=_host_llm_available(ctx)
+            )
             return [f"MCP server {name!r}: {result}"] if result else None
         except Exception:  # noqa: BLE001 — fail closed
             logger.exception("skillspector mcp-add gate errored; blocking")

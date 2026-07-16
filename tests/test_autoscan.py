@@ -433,6 +433,10 @@ def test_custom_runner_alone_is_scannable(plugin):
         "hermes mcp add x --command node --args --require=/tmp/evil.js /tmp/clean.js",
         "hermes mcp add x --command node --args -r /tmp/evil.js /tmp/clean.js",
         "hermes mcp add x --command node --args --import /tmp/evil.mjs /tmp/clean.js",
+        # `-c` marks a command string, not a scannable file (metachar-free here so
+        # this isolates the -c detection from the compound-escalation path).
+        "hermes mcp add x --command bash --args -c /opt/evil.sh",
+        "hermes mcp add x --command python --args -c import_module",
     ],
 )
 def test_loader_option_in_mcp_args_is_unscannable(plugin, monkeypatch, cmd):

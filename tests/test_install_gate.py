@@ -27,33 +27,48 @@ def _cfg(use_llm=False, timeout=5):
 
 
 @pytest.mark.parametrize(
-    ("verdict", "use_llm", "blocks"),
+    ("verdict", "use_llm", "host_llm", "blocks"),
     [
-        ({"safe_to_install": True, "llm_used": True}, True, False),  # clean, semantic confirmed
-        ({"safe_to_install": True}, False, False),  # clean static, semantic not requested
-        ({"safe_to_install": False, "severity": "high"}, False, True),  # finding
-        ({"error": "boom"}, False, True),  # incomplete
-        ({"safe_to_install": True, "llm_used": False}, True, True),  # requested semantic didn't run
-        ({"safe_to_install": True}, True, True),  # use_llm requested but no llm_used -> block (#3)
+        # (verdict, cfg.use_llm, host_llm_available, expected-block)
+        (
+            {"safe_to_install": True, "llm_used": True},
+            True,
+            True,
+            False,
+        ),  # clean, semantic confirmed
+        ({"safe_to_install": True}, False, True, False),  # clean static, semantic not requested
+        ({"safe_to_install": False, "severity": "high"}, False, False, True),  # finding
+        ({"error": "boom"}, False, False, True),  # incomplete
+        # use_llm requested AND a model is bound but the pass didn't run -> block (round 2)
+        ({"safe_to_install": True, "llm_used": False}, True, True, True),
+        ({"safe_to_install": True}, True, True, True),  # bound model, no llm_used -> block
+        # use_llm requested but NO model bound (bare CLI/dashboard) -> clean static allows (round 3)
+        ({"safe_to_install": True}, True, False, False),
+        ({"safe_to_install": True, "llm_used": False}, True, False, False),
     ],
 )
-def test_scan_reason_blocks_only_when_unsafe(plugin, monkeypatch, verdict, use_llm, blocks):
+def test_scan_reason_policy(plugin, monkeypatch, verdict, use_llm, host_llm, blocks):
     a = _autoscan()
     monkeypatch.setattr(_tools(), "skillspector_scan", lambda args, **k: json.dumps(verdict))
-    reason = a.scan_reason(object(), _cfg(use_llm=use_llm), "https://github.com/a/b")
+    reason = a.scan_reason(
+        object(), _cfg(use_llm=use_llm), "https://github.com/a/b", host_llm_available=host_llm
+    )
     assert (reason is not None) == blocks
 
 
-def test_scan_reason_allows_static_scan_when_use_llm_false(plugin, monkeypatch):
-    # use_llm=False = operator opted out of the semantic pass, so a clean static
-    # verdict allows. (Host-LLM availability is irrelevant: the gate keys on the
-    # configured intent, not on what happens to be bound.)
+def test_scan_reason_no_llm_bound_does_not_hard_reject_default_install(plugin, monkeypatch):
+    # Regression: use_llm defaults true, but the bare CLI/dashboard install has no
+    # bound model. A clean static verdict must ALLOW rather than block every such
+    # install. (A bound-but-unused model is a real downgrade and still blocks.)
     a = _autoscan()
     monkeypatch.setattr(
         _tools(), "skillspector_scan", lambda args, **k: json.dumps({"safe_to_install": True})
     )
-    cfg = a.Config(enabled=True, use_llm=False, timeout_s=5)
-    assert a.scan_reason(object(), cfg, "https://github.com/a/b") is None
+    cfg = a.Config(enabled=True, use_llm=True, timeout_s=5)  # default use_llm
+    assert a.scan_reason(object(), cfg, "https://github.com/a/b", host_llm_available=False) is None
+    assert (
+        a.scan_reason(object(), cfg, "https://github.com/a/b", host_llm_available=True) is not None
+    )
 
 
 def _gate():
@@ -141,6 +156,16 @@ def test_plugin_hook_never_raises(plugin, monkeypatch, tmp_path):
             False,
             True,
         ),  # ~ expands to an absolute path -> scannable
+        (
+            {"command": "bash", "args": ["-c", "/opt/approved; /opt/evil"]},
+            True,
+            False,
+        ),  # `bash -c '<code>'` runs a command string, not a scannable file -> block (#1)
+        (
+            {"command": "python", "args": ["-c", "import os; os.system('x')"]},
+            True,
+            False,
+        ),  # `python -c '<code>'` inline code -> block (#1)
     ],
 )
 def test_mcp_hook_policy(plugin, monkeypatch, server_config, should_block, should_scan):
