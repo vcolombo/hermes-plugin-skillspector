@@ -27,37 +27,33 @@ def _cfg(use_llm=False, timeout=5):
 
 
 @pytest.mark.parametrize(
-    ("verdict", "host_llm", "blocks"),
+    ("verdict", "use_llm", "blocks"),
     [
-        ({"safe_to_install": True, "llm_used": True}, True, False),  # clean semantic
-        ({"safe_to_install": True}, False, False),  # clean static, no LLM ctx
+        ({"safe_to_install": True, "llm_used": True}, True, False),  # clean, semantic confirmed
+        ({"safe_to_install": True}, False, False),  # clean static, semantic not requested
         ({"safe_to_install": False, "severity": "high"}, False, True),  # finding
         ({"error": "boom"}, False, True),  # incomplete
-        ({"safe_to_install": True, "llm_used": False}, True, True),  # expected LLM, didn't run
+        ({"safe_to_install": True, "llm_used": False}, True, True),  # requested semantic didn't run
+        ({"safe_to_install": True}, True, True),  # use_llm requested but no llm_used -> block (#3)
     ],
 )
-def test_scan_reason_blocks_only_when_unsafe(plugin, monkeypatch, verdict, host_llm, blocks):
+def test_scan_reason_blocks_only_when_unsafe(plugin, monkeypatch, verdict, use_llm, blocks):
     a = _autoscan()
     monkeypatch.setattr(_tools(), "skillspector_scan", lambda args, **k: json.dumps(verdict))
-    ctx = type("C", (), {"llm": object() if host_llm else None})()
-    reason = a.scan_reason(
-        ctx, _cfg(use_llm=host_llm), "https://github.com/a/b", host_llm_available=host_llm
-    )
+    reason = a.scan_reason(object(), _cfg(use_llm=use_llm), "https://github.com/a/b")
     assert (reason is not None) == blocks
 
 
 def test_scan_reason_allows_static_scan_when_use_llm_false(plugin, monkeypatch):
-    # cfg.use_llm=False (operator opted out of semantic scans) with a host LLM
-    # bound (normal agent runtime) must NOT be treated as a downgraded scan —
-    # no semantic pass was ever requested, so a clean static verdict allows.
+    # use_llm=False = operator opted out of the semantic pass, so a clean static
+    # verdict allows. (Host-LLM availability is irrelevant: the gate keys on the
+    # configured intent, not on what happens to be bound.)
     a = _autoscan()
     monkeypatch.setattr(
         _tools(), "skillspector_scan", lambda args, **k: json.dumps({"safe_to_install": True})
     )
     cfg = a.Config(enabled=True, use_llm=False, timeout_s=5)
-    ctx = type("C", (), {"llm": object()})()
-    reason = a.scan_reason(ctx, cfg, "https://github.com/a/b", host_llm_available=True)
-    assert reason is None
+    assert a.scan_reason(object(), cfg, "https://github.com/a/b") is None
 
 
 def _gate():
@@ -120,6 +116,31 @@ def test_plugin_hook_never_raises(plugin, monkeypatch, tmp_path):
         ),  # env inject
         ({"url": "https://example.com/mcp"}, True, False),  # remote, no source
         ({"command": "npx"}, True, False),  # bare runner
+        (
+            {"command": "node", "args": ["--require=/tmp/evil.js", "/tmp/clean.js"]},
+            True,
+            False,
+        ),  # attached loader option runs unscanned code -> block, never scan (#1)
+        (
+            {"command": "node", "args": ["-r", "/tmp/evil.js", "/tmp/clean.js"]},
+            True,
+            False,
+        ),  # separate-value loader flag (#1)
+        (
+            {"command": "node", "args": ["./server.js"]},
+            True,
+            False,
+        ),  # relative artifact -> unbound execution dir -> block (#2)
+        (
+            {"command": "node", "args": ["server.js"]},
+            True,
+            False,
+        ),  # bare relative artifact -> not absolute -> block (#2)
+        (
+            {"command": "node", "args": ["~/mcp/server.js"]},
+            False,
+            True,
+        ),  # ~ expands to an absolute path -> scannable
     ],
 )
 def test_mcp_hook_policy(plugin, monkeypatch, server_config, should_block, should_scan):

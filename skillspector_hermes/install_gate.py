@@ -15,6 +15,7 @@ install, or ``None`` to allow (the Hermes-core contract).
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
 
 from . import autoscan
@@ -23,10 +24,6 @@ logger = logging.getLogger("skillspector_hermes.install_gate")
 
 # MCP runners whose real payload is an --args artifact, mirrored from autoscan.
 _MCP_RUNNERS = autoscan._MCP_RUNNERS
-
-
-def _host_llm_available(ctx: object) -> bool:
-    return getattr(ctx, "llm", None) is not None
 
 
 def make_plugin_install_hook(ctx: object, cfg: autoscan.Config) -> Callable[..., list[str] | None]:
@@ -47,9 +44,7 @@ def make_plugin_install_hook(ctx: object, cfg: autoscan.Config) -> Callable[...,
             source = path or git_url
             if not source:
                 return [f"plugin {name!r}: no scannable source provided by installer"]
-            reason = autoscan.scan_reason(
-                ctx, cfg, source, host_llm_available=_host_llm_available(ctx)
-            )
+            reason = autoscan.scan_reason(ctx, cfg, source)
             return [reason] if reason else None
         except Exception:  # noqa: BLE001 — fail closed; never break the install path
             logger.exception("skillspector plugin-install gate errored; blocking")
@@ -61,9 +56,13 @@ def make_plugin_install_hook(ctx: object, cfg: autoscan.Config) -> Callable[...,
 def _mcp_payload(server_config: dict) -> tuple[str | None, str | None]:
     """Resolve a stdio MCP config to (scannable_source, block_reason).
 
-    Works on the already-parsed ``server_config`` (no shell parsing). Exactly
-    one of the two is non-None. A launch env can inject code, multiple payloads
-    are ambiguous, and a package name / bare runner is not fetchable — all block.
+    Works on the already-parsed ``server_config`` (no shell parsing). Exactly one
+    of the two is non-None. Everything that can't be pinned to a single fetchable
+    artifact blocks (fail closed): a launch env or a loader/require/import option
+    can inject unscanned code; multiple payloads are ambiguous; a package name or
+    bare runner is not fetchable; and a *relative* artifact cannot be bound to the
+    directory a later Hermes launch will resolve it against, so only an absolute
+    path (or a ``~`` / URL) is scanned.
     """
     if server_config.get("url"):
         return None, "remote MCP endpoint — no local source to scan"
@@ -73,6 +72,8 @@ def _mcp_payload(server_config: dict) -> tuple[str | None, str | None]:
     args = server_config.get("args") or []
     if not isinstance(args, list):
         return None, "MCP args are not a list; cannot resolve a scannable payload"
+    if autoscan.has_code_injecting_option(args):
+        return None, "MCP args carry a loader/require/import option that runs unscanned code"
     payloads: list[str] = []
     if isinstance(command, str) and command and command not in _MCP_RUNNERS:
         payloads.append(command)  # a custom (non-runner) command is itself executed
@@ -80,9 +81,18 @@ def _mcp_payload(server_config: dict) -> tuple[str | None, str | None]:
     if len(payloads) != 1:
         return None, "MCP install has no single scannable artifact (bare runner or ambiguous argv)"
     only = payloads[0]
-    if not (autoscan._URL_RE.match(only) or only.startswith(("/", "./", "../", "~"))):
-        return None, f"MCP artifact {only!r} is a package name, not a fetchable source"
-    return only, None
+    if autoscan._URL_RE.match(only):
+        return only, None
+    if only.startswith("~"):
+        return os.path.expanduser(only), None
+    if os.path.isabs(only):
+        return only, None
+    if only.startswith(("./", "../")):
+        return None, (
+            f"MCP artifact {only!r} is a relative path; its execution directory is "
+            "unbound at install time (a later launch could resolve to a different file)"
+        )
+    return None, f"MCP artifact {only!r} is not an absolute path or URL (package name or relative)"
 
 
 def make_mcp_add_hook(ctx: object, cfg: autoscan.Config) -> Callable[..., list[str] | None]:
@@ -95,9 +105,7 @@ def make_mcp_add_hook(ctx: object, cfg: autoscan.Config) -> Callable[..., list[s
             source, reason = _mcp_payload(server_config)
             if reason:
                 return [f"MCP server {name!r}: {reason}"]
-            result = autoscan.scan_reason(
-                ctx, cfg, source, host_llm_available=_host_llm_available(ctx)
-            )
+            result = autoscan.scan_reason(ctx, cfg, source)
             return [f"MCP server {name!r}: {result}"] if result else None
         except Exception:  # noqa: BLE001 — fail closed
             logger.exception("skillspector mcp-add gate errored; blocking")

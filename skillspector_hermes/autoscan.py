@@ -59,6 +59,25 @@ _SHELL_WRAPPERS = {"sh", "bash", "zsh", "dash", "env", "eval", "xargs", "nohup",
 # `hermes mcp add foo --command npx --args @scope/server` → scan @scope/server.
 _MCP_RUNNERS = {"npx", "uvx", "pipx", "node", "python", "python3", "deno", "bun", "sh", "bash"}
 
+# Runner options that load/execute extra code the payload scan would miss
+# (`--require=/x`, `-r x`, `--import x`, `--loader …`, `-e '<code>'`). The
+# non-flag payload filter drops these, so a config pairing a clean artifact with
+# one of them scans only the clean file while the runner runs the injected one.
+_LOADER_OPTS = frozenset(
+    {
+        "--require",
+        "-r",
+        "--import",
+        "--loader",
+        "--experimental-loader",
+        "--preload",
+        "--eval",
+        "-e",
+    }
+)
+# An option value ending in one of these (or a data: URI) is executable code.
+_CODE_SUFFIXES = (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".py", ".wasm", ".sh")
+
 # Compound / redirection / variable shell — escalate rather than parse a single command.
 _COMPOUND = ("&&", "||", ";", "|", "&", "`", "$", ">", "<", "\n")
 
@@ -136,6 +155,23 @@ def _has_compound(command: str) -> bool:
     return any(op in command for op in _COMPOUND)
 
 
+def has_code_injecting_option(args: list[str]) -> bool:
+    """True if *args* carries an option that loads/executes code a payload scan
+    would miss — a known loader flag (``--require``/``-r``/``--import``/…) or any
+    attached ``--opt=value`` whose value is a script file or ``data:`` URI. Fail
+    closed when present rather than scanning only the visible non-flag artifact.
+    """
+    for a in args:
+        if not isinstance(a, str) or not a.startswith("-"):
+            continue
+        opt, _, val = a.partition("=")
+        if opt in _LOADER_OPTS:
+            return True
+        if val and (val.startswith("data:") or val.endswith(_CODE_SUFFIXES)):
+            return True
+    return False
+
+
 def _mcp_local_target(after: list[str]) -> str | None:
     """The single scannable payload of a stdio MCP server, or ``None``.
 
@@ -152,6 +188,8 @@ def _mcp_local_target(after: list[str]) -> str | None:
     """
     if "--env" in after or "-e" in after:
         return None
+    if has_code_injecting_option(after):
+        return None  # a loader/require/import option runs code the payload scan misses
     payloads: list[str] = []
     if "--command" in after:
         cmd = _first_non_flag(after[after.index("--command") + 1 :])
@@ -344,27 +382,30 @@ def evaluate(
     return _approve(_summary(verdict, target.ref), key)
 
 
-def scan_reason(ctx: object, cfg: Config, source: str, *, host_llm_available: bool) -> str | None:
+def scan_reason(ctx: object, cfg: Config, source: str) -> str | None:
     """Scan *source* and map the verdict to a block reason (or ``None`` = allow).
 
     Used by the post-parse install gate, where a non-None return blocks the
-    install. Fail-closed: an errored/incomplete scan blocks. A clean static-only
-    verdict is allowed when no semantic scan was requested (``cfg.use_llm`` is
-    False) or no host LLM was available (a bare CLI install has no bound model —
-    blocking every such install would be unusable), but a semantic pass that was
-    both requested and expected to run yet didn't (``cfg.use_llm`` and
-    ``host_llm_available`` and ``llm_used`` not True) blocks, so an LLM outage
-    cannot silently downgrade a gate the operator configured.
+    install. Fail-closed and a clean two-state policy:
+
+    * ``use_llm: false`` — a static scan; a clean static verdict allows.
+    * ``use_llm: true`` — the operator asked for the semantic pass, so a clean
+      verdict is only allowed with positive confirmation it ran (``llm_used`` is
+      True). Anything else — an outage, or no host LLM bound in this context —
+      blocks (escalates to approval) rather than silently downgrading to static.
+
+    An errored/incomplete/timed-out scan always blocks.
     """
     verdict = _scan(ctx, cfg, source)
     if not isinstance(verdict, dict) or "error" in verdict:
         return f"SkillSpector scan did not complete for {source!r}"
     if verdict.get("safe_to_install") is not True:
         return _summary(verdict, source)
-    if cfg.use_llm and host_llm_available and verdict.get("llm_used") is not True:
+    if cfg.use_llm and verdict.get("llm_used") is not True:
         return (
             f"requested semantic scan of {source!r} did not run "
-            f"(llm_used={verdict.get('llm_used')!r}, scan_mode={verdict.get('scan_mode')!r})"
+            f"(use_llm=true, llm_used={verdict.get('llm_used')!r}, "
+            f"scan_mode={verdict.get('scan_mode')!r}); approve manually"
         )
     return None
 

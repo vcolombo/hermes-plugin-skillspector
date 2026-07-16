@@ -426,6 +426,31 @@ def test_custom_runner_alone_is_scannable(plugin):
     assert t.kind == "mcp_local" and t.ref == "/usr/local/bin/thing"
 
 
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        # `--require`/`--import`/`-r` load code the non-flag payload scan misses.
+        "hermes mcp add x --command node --args --require=/tmp/evil.js /tmp/clean.js",
+        "hermes mcp add x --command node --args -r /tmp/evil.js /tmp/clean.js",
+        "hermes mcp add x --command node --args --import /tmp/evil.mjs /tmp/clean.js",
+    ],
+)
+def test_loader_option_in_mcp_args_is_unscannable(plugin, monkeypatch, cmd):
+    # Regression (fallback parser): a loader option must not let a clean artifact
+    # vouch for an injected one -> ref None -> escalate, never scan.
+    t = _autoscan().parse_install_target(cmd)
+    assert t.kind == "mcp_local" and t.ref is None
+
+    monkeypatch.setattr(
+        _tools(),
+        "skillspector_scan",
+        lambda *a, **k: pytest.fail(
+            "loader-option MCP install must not be scanned as one artifact"
+        ),
+    )
+    assert _hook()(tool_name="terminal", args={"command": cmd})["action"] == "approve"
+
+
 # -- relative targets resolve against the terminal workdir, else escalate -------
 
 
