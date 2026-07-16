@@ -65,6 +65,43 @@ The verdict includes `risk_score` (0–100), `severity`, `safe_to_install`,
 `llm_used` / `scan_mode`) so a static-only scan is never mistaken for a full
 semantic one. Per-call LLM failures, if any, appear in the report metadata.
 
+## Auto-scan installs (opt-in)
+
+By default the agent decides when to call `skillspector_scan`. You can instead
+have the plugin **gate extension installs automatically**: a `pre_tool_call`
+hook watches the agent's `terminal` tool, and when it runs `hermes plugins
+install`/`update` or `hermes mcp add`/`install`, it scans the target first and —
+**fail-closed** — escalates any non-clean or failed scan to Hermes' human
+approval prompt. Off unless you enable it:
+
+```yaml
+# Hermes config.yaml
+plugins:
+  entries:
+    skillspector_hermes:
+      auto_scan:
+        enabled: true        # default false
+        use_llm: true        # run the semantic pass during the gate (default true)
+        scan_timeout_s: 120  # on timeout, fail closed → approval
+```
+
+**This is best-effort defense-in-depth, not an airtight gate.** Know its limits
+before relying on it:
+
+- **TOCTOU** — the hook scans a *mutable reference* (`owner/repo`, `pkg@latest`)
+  before Hermes independently fetches it to install; the installed bytes can
+  differ from the scanned ones. Airtight scanning must happen on the fetched
+  artifact (staged/quarantined), which is what Hermes' own Skills Hub already
+  does — so **skills are out of scope here** (already guarded by `skills_guard`).
+  This hook covers plugins and MCP servers, where there is no such guard.
+- It matches a **single plain `hermes …` command**; anything wrapped or compound
+  (`&&`, `sh -c`, variables, pipes) escalates to approval rather than being
+  parsed. Installs that bypass the CLI entirely are outside the gate.
+- **Remote HTTP MCP** endpoints have no source to scan — they get
+  config-validation + approval, not a scan verdict.
+- `--yolo`, cached session/always approvals, and cron/direct-dispatch modes can
+  skip the human prompt.
+
 ## How the host-LLM binding works
 
 The handler binds `ctx.llm` for the duration of each scan and hands it to
