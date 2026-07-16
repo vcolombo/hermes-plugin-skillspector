@@ -46,6 +46,20 @@ def test_scan_reason_blocks_only_when_unsafe(plugin, monkeypatch, verdict, host_
     assert (reason is not None) == blocks
 
 
+def test_scan_reason_allows_static_scan_when_use_llm_false(plugin, monkeypatch):
+    # cfg.use_llm=False (operator opted out of semantic scans) with a host LLM
+    # bound (normal agent runtime) must NOT be treated as a downgraded scan —
+    # no semantic pass was ever requested, so a clean static verdict allows.
+    a = _autoscan()
+    monkeypatch.setattr(
+        _tools(), "skillspector_scan", lambda args, **k: json.dumps({"safe_to_install": True})
+    )
+    cfg = a.Config(enabled=True, use_llm=False, timeout_s=5)
+    ctx = type("C", (), {"llm": object()})()
+    reason = a.scan_reason(ctx, cfg, "https://github.com/a/b", host_llm_available=True)
+    assert reason is None
+
+
 def _gate():
     return importlib.import_module(f"{PKG}.install_gate")
 
