@@ -44,3 +44,42 @@ def test_scan_reason_blocks_only_when_unsafe(plugin, monkeypatch, verdict, host_
         ctx, _cfg(use_llm=host_llm), "https://github.com/a/b", host_llm_available=host_llm
     )
     assert (reason is not None) == blocks
+
+
+def _gate():
+    return importlib.import_module(f"{PKG}.install_gate")
+
+
+def test_plugin_hook_blocks_on_unsafe_clone(plugin, monkeypatch, tmp_path):
+    a = _autoscan()
+    seen = {}
+
+    def _scan(ctx, cfg, source):
+        seen["source"] = source
+        return {"safe_to_install": False, "severity": "critical"}
+
+    monkeypatch.setattr(a, "_scan", _scan)
+    hook = _gate().make_plugin_install_hook(ctx=object(), cfg=_cfg())
+    out = hook(name="evil", git_url="https://x/y.git", subdir=None, path=str(tmp_path), manifest={})
+    assert isinstance(out, list) and out
+    assert any("critical" in r for r in out)
+    assert seen["source"] == str(tmp_path)  # scanned the local clone, not the URL
+
+
+def test_plugin_hook_allows_clean(plugin, monkeypatch, tmp_path):
+    a = _autoscan()
+    monkeypatch.setattr(a, "_scan", lambda ctx, cfg, source: {"safe_to_install": True})
+    hook = _gate().make_plugin_install_hook(ctx=object(), cfg=_cfg())
+    assert hook(name="ok", git_url="https://x/y.git", path=str(tmp_path), manifest={}) is None
+
+
+def test_plugin_hook_never_raises(plugin, monkeypatch, tmp_path):
+    a = _autoscan()
+
+    def _boom(*args, **kw):
+        raise RuntimeError("scan exploded")
+
+    monkeypatch.setattr(a, "_scan", _boom)
+    hook = _gate().make_plugin_install_hook(ctx=object(), cfg=_cfg())
+    out = hook(name="x", path=str(tmp_path), manifest={})
+    assert isinstance(out, list) and out  # fail-closed: returns a block reason
