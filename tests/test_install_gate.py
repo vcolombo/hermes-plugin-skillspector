@@ -166,6 +166,16 @@ def test_plugin_hook_never_raises(plugin, monkeypatch, tmp_path):
             True,
             False,
         ),  # `python -c '<code>'` inline code -> block (#1)
+        (
+            {"command": "python", "args": ["-c__import__('os')", "/tmp/clean.py"]},
+            True,
+            False,
+        ),  # attached `-c<code>` (no space) must not let clean.py vouch for it (#1)
+        (
+            {"command": "node", "args": ["-r/tmp/evil.js", "/tmp/clean.js"]},
+            True,
+            False,
+        ),  # attached `-r<file>` preload
     ],
 )
 def test_mcp_hook_policy(plugin, monkeypatch, server_config, should_block, should_scan):

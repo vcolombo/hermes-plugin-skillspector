@@ -172,6 +172,10 @@ def has_code_injecting_option(args: list[str]) -> bool:
         opt, _, val = a.partition("=")
         if opt in _LOADER_OPTS:
             return True
+        # Attached short forms: interpreters accept `-c<code>`, `-e<code>`,
+        # `-r<file>` with no space, which the exact-token check above misses.
+        if len(a) > 2 and a.startswith(("-c", "-e", "-r")):
+            return True
         if val and (val.startswith("data:") or val.endswith(_CODE_SUFFIXES)):
             return True
     return False
