@@ -56,3 +56,51 @@ def make_plugin_install_hook(ctx: object, cfg: autoscan.Config) -> Callable[...,
             return [f"plugin {name!r}: SkillSpector gate errored; install blocked"]
 
     return _pre_plugin_install
+
+
+def _mcp_payload(server_config: dict) -> tuple[str | None, str | None]:
+    """Resolve a stdio MCP config to (scannable_source, block_reason).
+
+    Works on the already-parsed ``server_config`` (no shell parsing). Exactly
+    one of the two is non-None. A launch env can inject code, multiple payloads
+    are ambiguous, and a package name / bare runner is not fetchable — all block.
+    """
+    if server_config.get("url"):
+        return None, "remote MCP endpoint — no local source to scan"
+    if server_config.get("env"):
+        return None, "MCP install sets a launch environment (may inject code); approve manually"
+    command = server_config.get("command")
+    args = server_config.get("args") or []
+    if not isinstance(args, list):
+        return None, "MCP args are not a list; cannot resolve a scannable payload"
+    payloads: list[str] = []
+    if isinstance(command, str) and command and command not in _MCP_RUNNERS:
+        payloads.append(command)  # a custom (non-runner) command is itself executed
+    payloads.extend(a for a in args if isinstance(a, str) and not a.startswith("-"))
+    if len(payloads) != 1:
+        return None, "MCP install has no single scannable artifact (bare runner or ambiguous argv)"
+    only = payloads[0]
+    if not (autoscan._URL_RE.match(only) or only.startswith(("/", "./", "../", "~"))):
+        return None, f"MCP artifact {only!r} is a package name, not a fetchable source"
+    return only, None
+
+
+def make_mcp_add_hook(ctx: object, cfg: autoscan.Config) -> Callable[..., list[str] | None]:
+    """Build the ``pre_mcp_add`` callback."""
+
+    def _pre_mcp_add(*, name: str = "", server_config: object = None, **_kw: object):
+        try:
+            if not isinstance(server_config, dict):
+                return [f"MCP server {name!r}: no config to evaluate; approve manually"]
+            source, reason = _mcp_payload(server_config)
+            if reason:
+                return [f"MCP server {name!r}: {reason}"]
+            result = autoscan.scan_reason(
+                ctx, cfg, source, host_llm_available=_host_llm_available(ctx)
+            )
+            return [f"MCP server {name!r}: {result}"] if result else None
+        except Exception:  # noqa: BLE001 — fail closed
+            logger.exception("skillspector mcp-add gate errored; blocking")
+            return [f"MCP server {name!r}: SkillSpector gate errored; add blocked"]
+
+    return _pre_mcp_add

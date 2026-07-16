@@ -83,3 +83,42 @@ def test_plugin_hook_never_raises(plugin, monkeypatch, tmp_path):
     hook = _gate().make_plugin_install_hook(ctx=object(), cfg=_cfg())
     out = hook(name="x", path=str(tmp_path), manifest={})
     assert isinstance(out, list) and out  # fail-closed: returns a block reason
+
+
+@pytest.mark.parametrize(
+    ("server_config", "should_block", "should_scan"),
+    [
+        (
+            {"command": "python", "args": ["/opt/mcp/server.py"]},
+            False,
+            True,
+        ),  # single local artifact
+        ({"command": "npx", "args": ["@scope/server"]}, True, False),  # package name (unscannable)
+        (
+            {"command": "node", "args": ["--import", "./a.mjs", "./b.mjs"]},
+            True,
+            False,
+        ),  # multi payload
+        (
+            {"command": "node", "env": {"NODE_OPTIONS": "--require=/tmp/e.js"}, "args": ["/a.js"]},
+            True,
+            False,
+        ),  # env inject
+        ({"url": "https://example.com/mcp"}, True, False),  # remote, no source
+        ({"command": "npx"}, True, False),  # bare runner
+    ],
+)
+def test_mcp_hook_policy(plugin, monkeypatch, server_config, should_block, should_scan):
+    a = _autoscan()
+    scanned = {"called": False}
+
+    def _scan(ctx, cfg, source):
+        scanned["called"] = True
+        return {"safe_to_install": True, "llm_used": True}
+
+    monkeypatch.setattr(a, "_scan", _scan)
+    ctx = type("C", (), {"llm": object()})()
+    hook = _gate().make_mcp_add_hook(ctx=ctx, cfg=_cfg(use_llm=True))
+    out = hook(name="x", server_config=server_config)
+    assert (out is not None) == should_block
+    assert scanned["called"] == should_scan
