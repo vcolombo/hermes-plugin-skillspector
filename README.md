@@ -85,6 +85,23 @@ plugins:
         scan_timeout_s: 120  # on timeout, fail closed → approval
 ```
 
+**How it hooks in (two tiers):**
+
+- **Authoritative (patched/upstream Hermes):** when the host exposes the
+  `pre_plugin_install` / `pre_mcp_add` lifecycle hooks, the gate scans the
+  *canonical, already-parsed* install — the cloned plugin files on disk, or the
+  resolved MCP `server_config` — before the artifact is trusted. No shell
+  parsing, no TOCTOU, and it covers CLI, dashboard, and agent installs. A
+  non-clean scan blocks the install with a printed reason.
+- **Fallback (stock Hermes):** without those hooks, the plugin watches the
+  agent's `terminal` tool and parses `hermes plugins install` / `hermes mcp add`
+  commands heuristically. This is best-effort — it only sees agent-run installs
+  (not a human typing the command), and novel shell forms fall through to
+  Hermes' own approval rather than a scan.
+
+The plugin feature-detects and uses the authoritative path automatically when
+available.
+
 **This is best-effort defense-in-depth, not an airtight gate.** Know its limits
 before relying on it:
 

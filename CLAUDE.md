@@ -44,6 +44,16 @@ and is fine.
   wrappers delegate to the originals whenever no host LLM is bound, so they are inert
   outside a scan and self-disable on SkillSpector versions that don't need them.
 
+**3. The install gate has two tiers, feature-detected via `VALID_HOOKS`** — mirrors
+  `bridge.py`'s native-vs-bridge pattern. When the host exposes
+  `pre_plugin_install` / `pre_mcp_add` lifecycle hooks, the plugin uses the
+  authoritative post-parse gate (`install_gate.py`) for canonical, TOCTOU-free
+  scanning. On stock Hermes lacking those hooks, it falls back to the
+  terminal-command parser (`autoscan.py`), which is best-effort and intentionally
+  frozen — do not extend it. The fallback watcher (`autoscan.make_hook`) is always
+  registered; it delegates to the authoritative gate if available, else parses
+  the shell string heuristically.
+
 The host LLM is held in a `ContextVar` (`host_llm/_state.py`) — task-local, async-safe. It
 is an opaque `object`; this package never imports the Hermes `agent` package and calls the
 LLM by duck typing (`host_llm.complete(messages, purpose=...)`).

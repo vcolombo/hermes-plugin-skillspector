@@ -3,6 +3,14 @@
 
 """Config-gated ``pre_tool_call`` gate for extension installs.
 
+NOTE: This terminal-command parser is the FALLBACK gate, used only on stock
+Hermes builds that lack the ``pre_plugin_install`` / ``pre_mcp_add`` lifecycle
+hooks. It is best-effort defense-in-depth over an inherently ambiguous surface
+(a shell string) and is intentionally FROZEN — do not extend it to chase new
+shell forms. The authoritative gate is ``install_gate`` (canonical, post-parse,
+TOCTOU-free); prefer fixing/expanding that. Anything this parser cannot classify
+cleanly escalates to approval (fail-closed).
+
 Best-effort, defense-in-depth: when the agent shells out through the ``terminal``
 tool to install a Hermes **plugin** or **MCP server**, scan the target with
 SkillSpector first and — *fail-closed* — escalate anything not-clean to Hermes'
