@@ -54,7 +54,7 @@ def fake_stock_skillspector(plugin, monkeypatch: pytest.MonkeyPatch):
 
     Mimics the surface the bridge touches: ``providers._select_active_provider``
     and ``mcp_server.resolve_provider_credentials`` (the stock gate spelling).
-    No ``skillspector.providers.host`` — so the bridge path activates.
+    No ``providers.use_provider`` — so the bridge path activates.
     Bridge patch state is reset so each test starts unpatched.
     """
     default_provider = _DefaultProvider()
@@ -70,8 +70,6 @@ def fake_stock_skillspector(plugin, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setitem(sys.modules, "skillspector", skillspector)
     monkeypatch.setitem(sys.modules, "skillspector.providers", providers)
     monkeypatch.setitem(sys.modules, "skillspector.mcp_server", mcp_server)
-    # No skillspector.providers.host: ensure any leftover module is absent.
-    monkeypatch.delitem(sys.modules, "skillspector.providers.host", raising=False)
 
     bridge = plugin.bridge if hasattr(plugin, "bridge") else None
     if bridge is None:

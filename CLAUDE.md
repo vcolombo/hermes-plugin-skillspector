@@ -36,8 +36,10 @@ at scan time. The `skillspector` *toolset* string in `register` is just a displa
 and is fine.
 
 **2. `bridge.py` feature-detects two ways to inject the host LLM into SkillSpector:**
-- *Native path* — if `skillspector.providers.host` exists, hand the LLM to SkillSpector's
-  own ContextVar. No patching.
+- *Native path* — if `skillspector.providers.use_provider` / `reset_provider` exist
+  (SkillSpector ≥ 2.4.x, NVIDIA/SkillSpector#249), inject the vendored
+  `BridgeHostProvider` through SkillSpector's own ContextVar. No patching. The provider
+  still reads the host LLM from this package's ContextVar on both paths.
 - *Bridge path* (stock SkillSpector) — expose the vendored `BridgeHostProvider`
   (`host_llm/provider.py`) via SkillSpector's duck-typed CLI-capable surface, plus two
   idempotent monkeypatch *wrappers*: provider selection and the MCP credential gate. Both

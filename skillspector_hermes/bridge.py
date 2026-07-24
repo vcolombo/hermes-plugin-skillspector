@@ -3,9 +3,12 @@
 
 """Feature-detecting binding between the Hermes host LLM and SkillSpector.
 
-Preferred (native) path: SkillSpector versions that ship embedded-provider
-support (``skillspector.providers.host``) get the host LLM handed straight to
-their own ContextVar — no patching, native structured output.
+Preferred (native) path: SkillSpector versions that ship scoped provider
+injection (``skillspector.providers.use_provider`` / ``reset_provider``,
+merged upstream in NVIDIA/SkillSpector#249, released in 2.4.x) get the
+vendored :class:`BridgeHostProvider` injected through SkillSpector's own
+ContextVar — no patching. The provider still reads the host LLM from this
+package's ContextVar, so both paths share one binding model.
 
 Bridge path (stock SkillSpector): the vendored :class:`BridgeHostProvider`
 is exposed through SkillSpector's sanctioned duck-typed CLI-capability
@@ -90,18 +93,19 @@ def bind(host_llm: object) -> Callable[[], None]:
     Uses SkillSpector's native embedded-provider support when present,
     otherwise activates the vendored bridge.
     """
-    try:
-        from skillspector.providers.host import (
-            reset_host_llm as native_reset,
-        )
-        from skillspector.providers.host import (
-            set_host_llm as native_set,
-        )
-    except ImportError:
-        pass
-    else:
-        token = native_set(host_llm)
-        return lambda: native_reset(token)
+    import skillspector.providers as providers
+
+    native_use = getattr(providers, "use_provider", None)
+    native_reset = getattr(providers, "reset_provider", None)
+    if callable(native_use) and callable(native_reset):
+        host_token = set_host_llm(host_llm)
+        provider_token = native_use(BridgeHostProvider())
+
+        def _cleanup() -> None:
+            native_reset(provider_token)
+            reset_host_llm(host_token)
+
+        return _cleanup
 
     _ensure_patches()
     token = set_host_llm(host_llm)

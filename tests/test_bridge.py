@@ -25,29 +25,31 @@ class _FakeHostLlm:
 
 
 def test_native_path_used_when_available(plugin, monkeypatch):
-    """skillspector.providers.host present -> its ContextVar is used, no patches."""
+    """providers.use_provider present (SkillSpector#249) -> inject, no patches."""
     calls: list[tuple[str, object]] = []
-    native = types.ModuleType("skillspector.providers.host")
-    native.set_host_llm = lambda h: calls.append(("set", h)) or "tok"
-    native.reset_host_llm = lambda t: calls.append(("reset", t))
-
     skillspector = types.ModuleType("skillspector")
     providers = types.ModuleType("skillspector.providers")
-    providers.host = native
+    providers.use_provider = lambda p: calls.append(("use", p)) or "tok"
+    providers.reset_provider = lambda t: calls.append(("reset", t))
+    original_select = lambda: None  # noqa: E731
+    providers._select_active_provider = original_select
     monkeypatch.setitem(sys.modules, "skillspector", skillspector)
     monkeypatch.setitem(sys.modules, "skillspector.providers", providers)
-    monkeypatch.setitem(sys.modules, "skillspector.providers.host", native)
 
     bridge = _bridge()
     monkeypatch.setattr(bridge, "_patches_installed", False)
 
     host = _FakeHostLlm()
     cleanup = bridge.bind(host)
-    assert calls == [("set", host)]
-    assert _host_llm_pkg().get_host_llm() is None  # vendored state untouched
+    assert [c[0] for c in calls] == ["use"]
+    assert type(calls[0][1]).__name__ == "BridgeHostProvider"
+    # The injected provider reads the vendored ContextVar for the host LLM.
+    assert _host_llm_pkg().get_host_llm() is host
     assert bridge._patches_installed is False  # no patching on the native path
+    assert providers._select_active_provider is original_select  # unwrapped
     cleanup()
-    assert calls == [("set", host), ("reset", "tok")]
+    assert calls == [("use", calls[0][1]), ("reset", "tok")]
+    assert _host_llm_pkg().get_host_llm() is None
 
 
 def test_bridge_path_patches_selection_and_gate(fake_stock_skillspector):
@@ -90,7 +92,6 @@ def test_gate_patch_handles_204_spelling(plugin, monkeypatch):
     monkeypatch.setitem(sys.modules, "skillspector", skillspector)
     monkeypatch.setitem(sys.modules, "skillspector.providers", providers)
     monkeypatch.setitem(sys.modules, "skillspector.mcp_server", mcp_server)
-    monkeypatch.delitem(sys.modules, "skillspector.providers.host", raising=False)
 
     bridge = _bridge()
     monkeypatch.setattr(bridge, "_patches_installed", False)
@@ -112,7 +113,6 @@ def test_gate_patch_skips_capability_aware_skillspector(plugin, monkeypatch):
     monkeypatch.setitem(sys.modules, "skillspector", skillspector)
     monkeypatch.setitem(sys.modules, "skillspector.providers", providers)
     monkeypatch.setitem(sys.modules, "skillspector.mcp_server", mcp_server)
-    monkeypatch.delitem(sys.modules, "skillspector.providers.host", raising=False)
 
     bridge = _bridge()
     monkeypatch.setattr(bridge, "_patches_installed", False)

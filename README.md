@@ -145,9 +145,11 @@ before relying on it:
 The handler binds `ctx.llm` for the duration of each scan and hands it to
 SkillSpector through a feature-detecting bridge (`bridge.py`):
 
-- **Native path** — SkillSpector versions with embedded-provider support
-  (`skillspector.providers.host`) receive the host LLM through their own
-  ContextVar. No patching; native structured output.
+- **Native path** — SkillSpector versions with scoped provider injection
+  (`skillspector.providers.use_provider`, merged in
+  [NVIDIA/SkillSpector#249](https://github.com/NVIDIA/SkillSpector/pull/249),
+  released in 2.4.x) get the vendored `BridgeHostProvider` injected through
+  SkillSpector's own ContextVar. No patching.
 - **Bridge path** — stock SkillSpector gets the vendored
   `BridgeHostProvider`, exposed through SkillSpector's sanctioned duck-typed
   CLI-capability surface, plus two idempotent wrapper patches (provider
