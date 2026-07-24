@@ -443,8 +443,9 @@ def _scan(ctx: object, cfg: Config, source: str) -> dict[str, Any] | None:
     import state (so the scan behaves exactly as in-process), which ``spawn``
     cannot — it would pickle the unpicklable host LLM. Where ``fork`` is
     unavailable (macOS/Windows dev), fall back to an unkillable thread.
-    ponytail: fork worker; if hung scans still accumulate on a fork-less host,
-    move the fallback to a spawn+static subprocess.
+    Known ceiling: the thread fallback cannot be killed. If hung scans
+    accumulate on a fork-less host, move the fallback to a spawn-based
+    subprocess that re-imports and runs a static-only scan.
     """
     args = {"target": source, "use_llm": cfg.use_llm, "output_format": "json"}
     host_llm = getattr(ctx, "llm", None)

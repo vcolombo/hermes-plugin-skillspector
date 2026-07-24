@@ -22,14 +22,17 @@ provides_hooks:
 optional_config:
   - key: auto_scan
     description: >-
-      Opt-in gate (default OFF). When enabled, a pre_tool_call hook scans plugin
-      and MCP-server installs the agent runs via `hermes plugins install/update`
-      and `hermes mcp add/install`, and — fail-closed — escalates any non-clean
-      or failed scan to the human-approval gate. Best-effort defense-in-depth
-      only: it scans a mutable ref before Hermes fetches it (TOCTOU), matches a
-      single plain `hermes ...` command, and is bypassed by --yolo / cached
-      approvals. Skills are out of scope (already guarded by skills_guard). Keys:
-      enabled (bool, default false), use_llm (bool, default true),
+      Opt-in gate (default OFF). Two tiers, feature-detected at register time.
+      On Hermes hosts with the pre_plugin_install / pre_mcp_add lifecycle
+      hooks, the authoritative gate scans canonical parsed install args and
+      blocks non-clean installs outright (TOCTOU-free for plugin installs;
+      MCP add is install-time best-effort). On stock Hermes it falls back to a
+      pre_tool_call terminal-command parser that — fail-closed — escalates any
+      non-clean or failed scan to the human-approval gate; that fallback is
+      best-effort only (scans a mutable ref before Hermes fetches it, matches
+      a single plain `hermes ...` command, bypassed by --yolo / cached
+      approvals). Skills are out of scope (already guarded by skills_guard).
+      Keys: enabled (bool, default false), use_llm (bool, default true),
       scan_timeout_s (int seconds, default 120). Set under
       plugins.entries.skillspector_hermes.auto_scan in config.yaml.
 optional_env:
