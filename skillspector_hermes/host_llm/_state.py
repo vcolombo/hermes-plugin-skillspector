@@ -7,10 +7,11 @@
 """Process-wide injection point for the Hermes host LLM.
 
 The plugin handler binds the host ``ctx.llm`` here for the duration of a scan.
-When the installed SkillSpector has native embedded-provider support
-(``skillspector.providers.host``), this module is unused — the native
-ContextVar is used instead (see :mod:`bridge`). A ``ContextVar`` (not a plain
-global) keeps the value task-local and async-safe.
+Both bridge paths use it: the vendored ``BridgeHostProvider`` reads the host
+LLM from here whether it was injected natively
+(``skillspector.providers.use_provider``) or via the selection patch (see
+:mod:`bridge`). A ``ContextVar`` (not a plain global) keeps the value
+task-local and async-safe.
 
 The value is an opaque ``object`` — this package never imports the Hermes
 ``agent`` package; the provider calls its methods by duck typing.

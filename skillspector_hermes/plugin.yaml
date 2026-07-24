@@ -3,15 +3,38 @@
 name: skillspector_hermes
 version: 1.0.0
 description: >-
-  Security scanner for AI agent skills, powered by SkillSpector. Scan a skill,
-  MCP server, Git repo, URL, zip, or local directory for vulnerabilities and
-  malicious patterns before installing or trusting it, and gate installs on the
-  returned risk verdict. The optional LLM semantic pass runs on the host's own
-  model via ctx.llm — no plugin-managed API keys. Requires the skillspector
-  Python package installed from Git in the Hermes environment (see README).
+  Security scanner for AI agent extensions, powered by SkillSpector. Scan an
+  agent skill (e.g. SKILL.md), MCP server, or agent plugin — delivered as a URL,
+  zip, Git repo, or local directory — for vulnerabilities and malicious patterns
+  before installing or trusting it, and gate installs on the returned risk
+  verdict. Not for general-purpose software: CLI tools and language packages
+  (pip/npm/cargo/apt) are out of scope even when installing one. The optional LLM
+  semantic pass runs on the host's own model via ctx.llm — no plugin-managed API
+  keys. Requires the skillspector Python package installed from Git in the Hermes
+  environment (see README).
 author: Vincent Colombo
 provides_tools:
   - skillspector_scan
+provides_hooks:
+  - pre_plugin_install
+  - pre_mcp_add
+  - pre_tool_call
+optional_config:
+  - key: auto_scan
+    description: >-
+      Opt-in gate (default OFF). Two tiers, feature-detected at register time.
+      On Hermes hosts with the pre_plugin_install / pre_mcp_add lifecycle
+      hooks, the authoritative gate scans canonical parsed install args and
+      blocks non-clean installs outright (TOCTOU-free for plugin installs;
+      MCP add is install-time best-effort). On stock Hermes it falls back to a
+      pre_tool_call terminal-command parser that — fail-closed — escalates any
+      non-clean or failed scan to the human-approval gate; that fallback is
+      best-effort only (scans a mutable ref before Hermes fetches it, matches
+      a single plain `hermes ...` command, bypassed by --yolo / cached
+      approvals). Skills are out of scope (already guarded by skills_guard).
+      Keys: enabled (bool, default false), use_llm (bool, default true),
+      scan_timeout_s (int seconds, default 120). Set under
+      plugins.entries.skillspector_hermes.auto_scan in config.yaml.
 optional_env:
   - name: SKILLSPECTOR_MODEL
     description: >-

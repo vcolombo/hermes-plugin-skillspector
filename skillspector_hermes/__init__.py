@@ -16,7 +16,17 @@ every scan. The ``skillspector`` *toolset* below is just a display namespace
 and does not collide.
 """
 
-from . import schemas, tools
+from . import autoscan, schemas, tools
+
+
+def _supported_hooks() -> set[str]:
+    """Hook events the running Hermes actually dispatches (empty if unknown)."""
+    try:
+        from hermes_cli.plugins import VALID_HOOKS
+
+        return set(VALID_HOOKS)
+    except Exception:  # noqa: BLE001 — no hermes_cli / older API -> assume none
+        return set()
 
 
 def register(ctx):
@@ -26,6 +36,14 @@ def register(ctx):
     the host's currently-active model, then bound into the handler. A context
     without ``llm`` (stub contexts, alternate runtimes) degrades to host-less
     static-only scanning instead of breaking the handler's never-raise contract.
+
+    When the operator opts in (``auto_scan.enabled`` in this plugin's config) and
+    the context supports lifecycle hooks, an install gate is also registered:
+    the authoritative ``pre_plugin_install``/``pre_mcp_add`` hooks when the
+    running Hermes dispatches both (see :mod:`install_gate`), else the legacy
+    best-effort ``pre_tool_call`` terminal parser (see :mod:`autoscan`). It is
+    off by default and best-effort (defense-in-depth, not airtight; TOCTOU
+    applies to the legacy path).
     """
 
     def _handler(args, **kwargs):
@@ -37,3 +55,18 @@ def register(ctx):
         schema=schemas.SKILLSPECTOR_SCAN,
         handler=_handler,
     )
+
+    register_hook = getattr(ctx, "register_hook", None)
+    if callable(register_hook):
+        cfg = autoscan.load_config(ctx)
+        if cfg.enabled:
+            from . import install_gate
+
+            supported = _supported_hooks()
+            if {"pre_plugin_install", "pre_mcp_add"} <= supported:
+                # Authoritative post-parse gate: canonical args, no shell parsing.
+                register_hook("pre_plugin_install", install_gate.make_plugin_install_hook(ctx, cfg))
+                register_hook("pre_mcp_add", install_gate.make_mcp_add_hook(ctx, cfg))
+            else:
+                # Stock Hermes: fall back to the frozen best-effort terminal parser.
+                register_hook("pre_tool_call", autoscan.make_hook(ctx, cfg))
